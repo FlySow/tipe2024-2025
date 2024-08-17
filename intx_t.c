@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <limits.h>
 
 intx_t intx_from_64(int64_t n) {
 	uint32_t* wordx = malloc(sizeof(uint32_t)*INT_SIZE);
@@ -49,9 +50,16 @@ intx_t intx_add(intx_t a, intx_t b) {
 }
 
 
-intx_t intx_push32(intx_t n, int32_t v) {
+intx_t intx_push32(intx_t n, uint32_t v) {
+	uint32_t carry = 0;
+	if(n[0] > UINT_MAX - v) carry = 1;
 	n[0]+= v;
-	if(v > n[0]) n[1]++;
+	for(int i = 1; i < INT_SIZE; i++) {
+		uint32_t temp = 0;
+		if(n[i] > UINT_MAX - carry) temp = 1;
+		n[i]+= carry;
+		carry = temp;
+	}
 	return n;
 }
 

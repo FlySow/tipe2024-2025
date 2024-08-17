@@ -24,7 +24,7 @@ intx_t intx_not(intx_t n);
 intx_t intx_sub(intx_t a, intx_t b);
 
 // Adds a 32bits value to n (permanently affects n)
-intx_t intx_push32(intx_t n, int32_t v);
+intx_t intx_push32(intx_t n, uint32_t v);
 
 // Shifts intx_t integer to the left by i bits
 intx_t intx_lshift(intx_t n, int i);
