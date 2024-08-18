@@ -35,6 +35,9 @@ intx_t intx_rshift(intx_t n, int i);
 // Detects if a intx_t is negative
 bool intx_is_negative(intx_t n);
 
+// Detects if a intx_t is equal to zero
+bool intx_is_zero(intx_t n);
+
 // Takes the 2's complement of n
 intx_t intx_two_complement(intx_t n);
 

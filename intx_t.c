@@ -40,11 +40,18 @@ void intx_print_h(intx_t n) {
 
 intx_t intx_add(intx_t a, intx_t b) {
 	intx_t res = malloc(sizeof(uint32_t));
-
-	res[0] = a[0] + b[0];
-	for(int i = 1; i < INT_SIZE; i++) {
-		res[i] = a[i] + b[i];
-		if(res[i-1] < a[i-1] || res[i-1] < b[i-1]) res[i]++;
+	
+	uint32_t carry = 0;
+	for(int i = 0; i < INT_SIZE; i++) {
+		uint32_t x = a[i];
+		uint32_t y = b[i];
+		if(carry) {
+			asm {
+				mov eax, x
+				mov ebx, y
+				add eax, ebx
+				mov 
+			}
 	}
 	return res;
 }
@@ -77,6 +84,7 @@ intx_t intx_sub(intx_t a, intx_t b) {
 	intx_t negation = intx_not(b);
 	intx_t one = intx_from_64(1);
 	intx_t comp_2 = intx_add(negation, one);
+	intx_print_h(comp_2);
 	intx_t res = intx_add(a, comp_2);
 	free(one);
 	free(negation);
@@ -266,4 +274,12 @@ intx_t intx_mod(intx_t n, intx_t d) {
 		return temp_r;
 	}
 	return r;
+}
+
+
+bool intx_is_zero(intx_t n) {
+	for(int i = 0; i < INT_SIZE; i++) {
+		if(n[i] != 0) return false;
+	}
+	return true;
 }
