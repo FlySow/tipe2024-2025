@@ -1,7 +1,7 @@
 #ifndef __INTX__
 #define __INTX__
 
-#define INT_SIZE 4
+#define INT_SIZE 32
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -45,7 +45,7 @@ intx_t intx_two_complement(intx_t n);
 intx_t intx_mul(intx_t a, intx_t b);
 
 // Divide intx_t int n(umerator) by intx_t int d(enominator)
-intx_t intx_div(intx_t n, intx_t d);
+void intx_div(intx_t n, intx_t d, intx_t q, intx_t r);
 
 intx_t intx_copy(intx_t n);
 
@@ -55,8 +55,10 @@ intx_t intx_set_digit(intx_t n, uint32_t i, bool digit);
 // Get digit at position i (i = 0 => LSB)
 bool intx_get_digit(intx_t n, uint32_t i);
 
-// Returns the remainder of the division between n(umerator) and d(enominator)
-intx_t intx_mod(intx_t n, intx_t d);
+int intx_cmp(intx_t a, intx_t b);
 
+intx_t intx_pow(intx_t b, intx_t p);
+
+intx_t intx_rand(bool positive);
 
 #endif

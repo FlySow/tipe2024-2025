@@ -39,21 +39,14 @@ void intx_print_h(intx_t n) {
 
 
 intx_t intx_add(intx_t a, intx_t b) {
-	intx_t res = malloc(sizeof(uint32_t));
-	
 	uint32_t carry = 0;
 	for(int i = 0; i < INT_SIZE; i++) {
-		uint32_t x = a[i];
-		uint32_t y = b[i];
-		if(carry) {
-			asm {
-				mov eax, x
-				mov ebx, y
-				add eax, ebx
-				mov 
-			}
+		uint32_t r = a[i] + b[i] + carry;
+		if((a[i] & 0x80000000 && b[i] & 0x80000000) || (!(r & 0x80000000) && (a[i] & 0x80000000 || b[i] & 0x80000000))) carry = 1;
+		else carry = 0;
+		a[i] = r;
 	}
-	return res;
+	return a;
 }
 
 
@@ -72,56 +65,47 @@ intx_t intx_push32(intx_t n, uint32_t v) {
 
 
 intx_t intx_not(intx_t n) {
-	intx_t res = malloc(sizeof(uint32_t)*INT_SIZE);
+	for(int i = 0; i < INT_SIZE; i++) n[i] = ~n[i];
 
-	for(int i = 0; i < INT_SIZE; i++) res[i] = ~n[i];
-
-	return res;
+	return n;
 }
 
 
 intx_t intx_sub(intx_t a, intx_t b) {
-	intx_t negation = intx_not(b);
-	intx_t one = intx_from_64(1);
-	intx_t comp_2 = intx_add(negation, one);
-	intx_print_h(comp_2);
-	intx_t res = intx_add(a, comp_2);
-	free(one);
-	free(negation);
-	free(comp_2);
-	return res;
+	intx_t b_copy = intx_copy(b);
+	intx_t comp_2 = intx_two_complement(b_copy);
+	intx_add(a, comp_2);
+	free(b_copy);
+	return a;
 }
 
 
 intx_t intx_lshift(intx_t n, int p) {
 	assert(p >= 0);
 	
-	intx_t res = malloc(sizeof(uint32_t)*INT_SIZE);
-	
 	int chunk_offset = p / 32;
 	int shift_offset = p % 32;
+	
 
-	for(int i = 0; i < chunk_offset && i < INT_SIZE; i++) res[i] = 0;
-	if(chunk_offset < INT_SIZE) res[chunk_offset] = n[0] << shift_offset;
-	for(int i = chunk_offset+1; i < INT_SIZE; i++) 
-		res[i] = (n[i-chunk_offset] << shift_offset) + (shift_offset != 0 ? n[i-chunk_offset-1] >> (32-shift_offset) : 0);
-	return res;
+	for(int i = INT_SIZE-1; i > chunk_offset && i >= 0; i--) 
+		n[i] = (n[i-chunk_offset] << shift_offset) + (shift_offset != 0 ? n[i-chunk_offset-1] >> (32-shift_offset) : 0);
+	if(chunk_offset < INT_SIZE) n[chunk_offset] = n[0] << shift_offset;
+	for(int i = 0; i < chunk_offset && i < INT_SIZE; i++) n[i] = 0;
+	return n;
 }
 
 
 intx_t intx_rshift(intx_t n, int p) {
 	assert(p >= 0);
 
-	intx_t res = malloc(sizeof(uint32_t)*INT_SIZE);
-
 	int chunk_offset = p / 32;
 	int shift_offset = p % 32;
 	
 	for(int i = 0; i < INT_SIZE-chunk_offset-1; i++) 
-		res[i] = (n[i+chunk_offset] >> shift_offset) + (shift_offset != 0 ? n[i+chunk_offset+1] << (32-shift_offset) : 0);
-	if(chunk_offset < INT_SIZE) res[INT_SIZE-chunk_offset-1] = n[INT_SIZE-1] >> shift_offset;
-	for(int i = INT_SIZE-chunk_offset+1; i < INT_SIZE; i++) res[i] = 0;
-	return res;
+		n[i] = (n[i+chunk_offset] >> shift_offset) + (shift_offset != 0 ? n[i+chunk_offset+1] << (32-shift_offset) : 0);
+	if(chunk_offset < INT_SIZE) n[INT_SIZE-chunk_offset-1] = n[INT_SIZE-1] >> shift_offset;
+	for(int i = INT_SIZE-chunk_offset; i < INT_SIZE; i++) n[i] = 0;
+	return n;
 }
 
 
@@ -137,6 +121,7 @@ bool intx_is_negative(intx_t n) {
 
 intx_t intx_mul(intx_t a, intx_t b) {
 	bool tc = false;
+	b = intx_copy(b);
 	if(intx_is_negative(a) && intx_is_negative(b)) {
 		a = intx_two_complement(a);
 		b = intx_two_complement(b);
@@ -148,26 +133,32 @@ intx_t intx_mul(intx_t a, intx_t b) {
 		b = intx_two_complement(b);
 	}
 	
-	intx_t res = intx_from_64(0);
+	uint64_t product[INT_SIZE][INT_SIZE];
+
+	for(int i = 0; i < INT_SIZE; i++) {
+		for(int j = 0; j < INT_SIZE; j++) product[i][j] = (uint64_t) a[i] * (uint64_t) b[j];
+		a[i] = 0;
+	}
 	
+	intx_t shift_int = intx_from_64(0);
+
 	for(int i = 0; i < INT_SIZE; i++) {
 		for(int j = 0; j < INT_SIZE-1; j++) {
-			uint64_t temp64 = (uint64_t) a[i]*(uint64_t) b[j];
-			intx_t temp = intx_from_u64(temp64);
-			intx_t temp_shift = intx_lshift(temp, 32*(i+j));
-			intx_t temp_res = intx_add(res, temp_shift);
-			free(temp);
-			free(res);
-			res = temp_res;
+			intx_lshift(shift_int, INT_SIZE*32);
+			intx_push32(shift_int, product[i][j] >> 32);
+			intx_lshift(shift_int, 32);
+			intx_push32(shift_int, (uint32_t) product[i][j]);
+			intx_lshift(shift_int, 32*(i+j));
+			intx_add(a, shift_int);
 		}
 	}
-	
+	free(shift_int);
+	free(b);
+
 	if(tc) {
-	       	intx_t tc_res = intx_two_complement(res);
-		free(res);
-		return tc_res;
+	       	return intx_two_complement(a);
 	}
-	return res;
+	return a;
 }
 
 
@@ -181,7 +172,7 @@ intx_t intx_copy(intx_t n) {
 intx_t intx_set_digit(intx_t n, uint32_t i, bool digit) {
 	assert(i < INT_SIZE*32);
 	
-	n[i/32] = (n[i/32] & ~(1 << i % 32)) + (digit ? 1 : 0) << i % 32;
+	n[i/32] = (n[i/32] & ~(1 << i % 32)) + ((digit ? 1 : 0) << i % 32);
 	return n;
 }
 
@@ -193,50 +184,24 @@ bool intx_get_digit(intx_t n, uint32_t i) {
 }
 
 
-intx_t intx_div(intx_t n, intx_t d) {
-	bool tc = false;
-	if(intx_is_negative(n) && intx_is_negative(d)) {
-		n = intx_two_complement(n);
-		d = intx_two_complement(d);
-	}else if(intx_is_negative(n)) {
-		tc = true;
-		n = intx_two_complement(n);
-	}else if(intx_is_negative(d)) {
-		tc = true;
-		d = intx_two_complement(d);
-	}
-
-	intx_t q = intx_from_64(0);
-	intx_t r = intx_from_64(0);
-
-	for(int i = INT_SIZE*32-1; i >= 0; i--) {
-		intx_t temp_shift = intx_lshift(r, 1);
-		temp_shift = intx_set_digit(temp_shift, 0, intx_get_digit(n, i));
-		intx_t temp_sub = intx_sub(temp_shift, d);
-		if(!intx_is_negative(temp_sub)) {
-			r = temp_sub;
-			free(temp_shift);
-			intx_set_digit(q, i, true);
-		} else {
-			r = temp_shift;
-			free(temp_sub);
-		}
-
-	}
-	
-	free(r);
-
-	if(tc) {
-	       	intx_t tc_q = intx_two_complement(q);
-		free(q);
-		return tc_q;
-	}
-	return q;
-}
-
-
-intx_t intx_mod(intx_t n, intx_t d) {
+void intx_div(intx_t n, intx_t d, intx_t q, intx_t r) {
 	bool neg = false;
+	bool tc = true;
+	
+	d = intx_copy(d);
+	n = intx_copy(n);
+	
+	if(intx_is_negative(n) && intx_is_negative(d)) {
+		n = intx_two_complement(n);
+		d = intx_two_complement(d);
+	}else if(intx_is_negative(n)) {
+		tc = true;
+		n = intx_two_complement(n);
+	}else if(intx_is_negative(d)) {
+		tc = true;
+		d = intx_two_complement(d);
+	}
+
 	if(intx_is_negative(n) && intx_is_negative(d)) {
 		n = intx_two_complement(n);
 		d = intx_two_complement(d);
@@ -248,32 +213,25 @@ intx_t intx_mod(intx_t n, intx_t d) {
 		d = intx_two_complement(d);
 	}
 
-	intx_t q = intx_from_64(0);
-	intx_t r = intx_from_64(0);
-
+	intx_lshift(r, INT_SIZE*32);
+	intx_lshift(q, INT_SIZE*32);
+	
 	for(int i = INT_SIZE*32-1; i >= 0; i--) {
-		intx_t temp_shift = intx_lshift(r, 1);
-		temp_shift = intx_set_digit(temp_shift, 0, intx_get_digit(n, i));
-		intx_t temp_sub = intx_sub(temp_shift, d);
-		if(!intx_is_negative(temp_sub)) {
-			r = temp_sub;
-			free(temp_shift);
+		intx_lshift(r, 1);
+		intx_set_digit(r, 0, intx_get_digit(n, i));
+		intx_sub(r, d);
+		if(!intx_is_negative(r)) {
 			intx_set_digit(q, i, true);
 		} else {
-			r = temp_shift;
-			free(temp_sub);
+			intx_add(r, d);
 		}
 
 	}
+	free(n);
+	free(d);
 
-	free(q);
-
-	if(neg) {
-	       	intx_t temp_r = intx_two_complement(r);
-		free(r);
-		return temp_r;
-	}
-	return r;
+	if(neg) intx_two_complement(r);
+	if(tc) intx_two_complement(q);
 }
 
 
@@ -283,3 +241,49 @@ bool intx_is_zero(intx_t n) {
 	}
 	return true;
 }
+
+
+int intx_cmp(intx_t a, intx_t b) {
+	int i = INT_SIZE-1;
+	while(i >= 0 && (uint32_t) a[i] == (uint32_t) b[i]) i--;
+	if(i < 0) return 0;
+	if(i == INT_SIZE-1) return (int32_t) a[i] > (int32_t) b[i] ? 1 : -1;
+	else return (uint32_t) a[i] > (uint32_t) b[i] ? 1 : -1;
+}
+
+
+intx_t intx_pow(intx_t b, intx_t p) {
+	assert(!intx_is_negative(p));
+	
+	intx_t res = intx_from_64(1);
+	intx_t acc = intx_copy(b);
+	intx_t power = intx_copy(p);
+
+	while(!intx_is_zero(power)) {
+		if(power[0] & 1) {
+			intx_t temp_res = intx_mul(res, acc);
+			free(res);
+			res = temp_res;
+		}
+		intx_t temp_acc = intx_mul(acc, acc);
+		free(acc);
+		acc = temp_acc;
+		intx_t temp_power = intx_rshift(power, 1);
+		free(power);
+		power = temp_power;
+	}
+	free(power);
+	free(acc);
+	return res;
+}
+			
+
+intx_t intx_rand(bool positive) {
+	intx_t res = malloc(sizeof(uint32_t)*INT_SIZE);
+	for(int i = 0; i < INT_SIZE; i++) res[i] = (rand() << 1) + rand();
+	res[INT_SIZE-1] = positive ? res[INT_SIZE-1] & 0x7fffffff : res[INT_SIZE-1] | 0x80000000;
+	return res;
+}
+
+
+
